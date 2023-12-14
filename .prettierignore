@@ -1,0 +1,11 @@
+# Ignore artifacts:
+ls
+dist
+build
+coverage
+
+# Ignore all HTML files:
+**/*.html
+
+# Ignore all pem files:
+**/*.pem

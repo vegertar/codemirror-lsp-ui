@@ -1,0 +1,23 @@
+#!/bin/sh
+
+BASEDIR=$(dirname "$0")
+
+# The script is built from https://github.com/microsoft/vscode-extension-samples/tree/main/lsp-sample/server
+# By using rollup.config.js as follows:
+#
+# import commonjs from '@rollup/plugin-commonjs';
+# import { nodeResolve } from '@rollup/plugin-node-resolve';
+#
+# export default {
+#   input: 'out/server.js',
+#   output: {
+#     dir: '.',
+#     format: 'cjs',
+#   },
+#   plugins: [commonjs(), nodeResolve()],
+#};
+#
+
+SCRIPT=${BASEDIR}/server.js
+
+exec node ${SCRIPT} --stdio

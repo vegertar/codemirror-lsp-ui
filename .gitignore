@@ -1,0 +1,5 @@
+/*.lock
+/dist
+node_modules
+.ccls-cache
+.tsconfig-lint.json
