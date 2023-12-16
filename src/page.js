@@ -2,8 +2,7 @@
 
 import { ViewPlugin } from "@codemirror/view";
 
-import { fileEvent } from "./file";
-import { stepNumber, stepTree } from "./step";
+import { stepTree } from "./step";
 
 export const pageNavigator = ViewPlugin.define((view) => {
   /**
@@ -24,18 +23,19 @@ export const pageNavigator = ViewPlugin.define((view) => {
   window.addEventListener("popstate", listener);
   return {
     update(update) {
-      const prevNumber = update.startState.field(stepNumber);
-      const currNumber = update.state.field(stepNumber);
+      void update;
+      // const prevNumber = update.startState.field(stepNumber);
+      // const currNumber = update.state.field(stepNumber);
 
-      for (const tr of update.transactions) {
-        if (tr.annotation(fileEvent)?.type == "load") {
-          history.replaceState(prevNumber, "");
-          history.pushState(null, "");
-          break;
-        }
-      }
+      // for (const tr of update.transactions) {
+      // if (tr.annotation(fileEvent)?.type == "load") {
+      //   history.replaceState(prevNumber, "");
+      //   history.pushState(null, "");
+      //   break;
+      // }
+      // }
 
-      history.replaceState(currNumber, "");
+      // history.replaceState(currNumber, "");
     },
     destroy() {
       window.removeEventListener("popstate", listener);

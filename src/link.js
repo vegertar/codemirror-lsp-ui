@@ -1,10 +1,269 @@
 // @ts-check
 
-import { Facet, StateField, Annotation } from "@codemirror/state";
-import { Decoration, EditorView } from "@codemirror/view";
-import { DocumentLinkProvider, DocumentLinkResolver } from "codemirror-lsp";
+import { Facet, StateField, StateEffect } from "@codemirror/state";
+import { Decoration, EditorView, ViewPlugin } from "@codemirror/view";
+import {
+  DocumentLinkProvider,
+  DocumentLinkResolver,
+  getFacetIfNeedsRefresh,
+  getLastValueFromTransaction,
+  getStateIfNeedsRefresh,
+  textDocumentUriEffect,
+} from "codemirror-lsp";
+import { produce } from "immer";
 
 import { binarySearch, compareRange, lspRangeToCm } from "./utils";
+
+/**
+ * @typedef LinkType
+ * @type {"document" | "symbol"}
+ */
+
+/**
+ * @typedef LinkEffect
+ * @type {{
+ *   type: "follow",
+ *   data: import("vscode-languageserver-types").URI,
+ * } | {
+ *   type: "followed",
+ *   data: import("vscode-languageserver-types").URI,
+ * }}
+ */
+
+/** @type {import("@codemirror/state").StateEffectType<LinkEffect>} */
+export const linkEffect = StateEffect.define();
+
+/** @type {import("@codemirror/state").StateEffectType<LinkType>} */
+export const linkActivateEffect = StateEffect.define();
+
+/** @type {import("@codemirror/state").StateEffectType<LinkType>} */
+export const linkDeactivateEffect = StateEffect.define();
+
+export const linkActivity = StateField.define({
+  /** @returns {Partial<Record<LinkType, boolean>>} */
+  create() {
+    return {};
+  },
+  update(value, tr) {
+    return produce(value, (draft) => {
+      for (const effect of tr.effects) {
+        if (effect.is(linkActivateEffect)) {
+          draft[effect.value] = true;
+        } else if (effect.is(linkDeactivateEffect)) {
+          draft[effect.value] = false;
+        }
+      }
+    });
+  },
+});
+
+export class LinkLoading {
+  static uri = StateField.define({
+    create() {
+      return "";
+    },
+    update(value, tr) {
+      const ev = getLastValueFromTransaction(tr, linkEffect);
+      switch (ev?.type) {
+        case "follow":
+          return ev.data || value;
+        case "followed":
+          return ev.data === value ? "" : value;
+        default:
+          return value;
+      }
+    },
+  });
+
+  static records = StateField.define({
+    /**
+     *
+     * @returns {Record<import("vscode-languageserver-types").URI, boolean>}
+     */
+    create() {
+      return {};
+    },
+    update(value, tr) {
+      return produce(value, (draft) => {
+        const ev = getLastValueFromTransaction(tr, linkEffect);
+        switch (ev?.type) {
+          case "follow":
+            draft[ev.data] = true;
+            break;
+          case "followed":
+            draft[ev.data] = false;
+            break;
+        }
+      });
+    },
+  });
+
+  /** @type {import("@codemirror/view").PluginSpec<LinkLoading>} */
+  static spec = {
+    provide: () => [LinkLoading.uri, LinkLoading.records],
+  };
+
+  /**
+   *
+   * @param {string} uri
+   */
+  async openFile(uri) {
+    let url = new URL(uri);
+    if (url.protocol === "file:") {
+      url = new URL(url.pathname, location.toString());
+    }
+
+    await new Promise((resolve) => setTimeout(resolve, 1000));
+    const response = await fetch(url);
+    return await response.text();
+  }
+
+  /**
+   * Implementation of the ViewPlugin update.
+   * @param {import("@codemirror/view").ViewUpdate} update
+   * @returns {void}
+   */
+  update(update) {
+    const uri = getStateIfNeedsRefresh(update, LinkLoading.uri);
+    if (uri) {
+      this.openFile(uri).then((text) => {
+        update.view.dispatch({
+          effects: [
+            textDocumentUriEffect.of(uri),
+            linkEffect.of({ type: "followed", data: uri }),
+          ],
+          changes: {
+            from: 0,
+            to: update.state.doc.length,
+            insert: text,
+          },
+        });
+      });
+    }
+  }
+}
+
+export const linkLoading = ViewPlugin.fromClass(LinkLoading, LinkLoading.spec);
+
+export const baseTheme = EditorView.baseTheme({
+  ".cm-lsp-link-document": {
+    textDecoration: "underline 1px",
+  },
+  '[data-cm-lsp-link-document="on"] .cm-lsp-link-document:hover': {
+    cursor: "var(--active-cursor, pointer)",
+  },
+});
+
+/**
+ * @template {{decorations: import("@codemirror/view").DecorationSet}} T
+ * @param {import("@codemirror/state").StateField<T>} field
+ */
+function createLinkDecorations(field) {
+  return EditorView.decorations.from(
+    field,
+    (state) => state?.decorations || Decoration.none,
+  );
+}
+
+/**
+ * @template {{findUri: (pos: number) => import("vscode-languageserver-types").URI | undefined}} T
+ * @param {import("@codemirror/state").StateField<T>} field
+ * @param {LinkType} type
+ * @param {string} [key="Control"]
+ */
+function createLinkEventHandler(field, type, key = "Control") {
+  return EditorView.domEventHandlers({
+    keydown(ev, view) {
+      if (ev.key === key) {
+        view.dispatch({
+          effects: linkActivateEffect.of(type),
+        });
+      }
+    },
+    keyup(ev, view) {
+      if (ev.key === key) {
+        view.dispatch({
+          effects: linkDeactivateEffect.of(type),
+        });
+      }
+    },
+    click({ clientX: x, clientY: y }, view) {
+      if (!view.state.field(linkActivity)[type]) {
+        return;
+      }
+
+      /**
+       * Currently, only one file can be loaded at a time.
+       */
+      if (view.state.field(LinkLoading.uri)) {
+        return;
+      }
+
+      const pos = view.posAtCoords({ x, y });
+      if (!pos) {
+        return;
+      }
+
+      const uri = view.state.field(field)?.findUri(pos);
+      if (uri) {
+        view.dispatch({
+          effects: linkEffect.of({ type: "follow", data: uri }),
+        });
+        return true;
+      }
+    },
+  });
+}
+
+/**
+ *
+ * @param {LinkType} type
+ * @param {number} i
+ * @returns
+ */
+function createLinkMark(type, i) {
+  const activeCursor = `--cm-lsp-link-${type}-active-cursor-${i}`;
+  const defaultActiveCursor = `var(--cm-lsp-link-${type}-active-cursor)`;
+  const style = `--active-cursor: var(${activeCursor}, ${defaultActiveCursor});`;
+  return Decoration.mark({
+    class: `cm-lsp-link-${type}`,
+    attributes: { style },
+    type,
+    i,
+  });
+}
+
+/**
+ * @template {{indicesOfUri: (uri: import("vscode-languageserver-types").URI) => number[]}} T
+ * @param {LinkType} type
+ * @param {import("@codemirror/state").StateField<T>} field
+ */
+function createLinkAttributes(field, type) {
+  return EditorView.contentAttributes.compute(
+    [linkActivity, LinkLoading.uri, field],
+    (state) => {
+      if (!state.field(linkActivity)[type]) {
+        return {};
+      }
+
+      const key = `cm-lsp-link-${type}`;
+      const attrs = { [`data-${key}`]: "on" };
+      const uri = state.field(LinkLoading.uri);
+      if (uri) {
+        /**
+         * Set the CSS cursor shape based on the link state:
+         *  'wait' for self-owned links being loaded,
+         *  'not-allowed' for others.
+         */
+        const indices = state.field(field).indicesOfUri(uri);
+        const style = indices.map((i) => `--${key}-active-cursor-${i}: wait`);
+        attrs.style = `--${key}-active-cursor: not-allowed;` + style.join(";");
+      }
+
+      return attrs;
+    },
+  );
+}
 
 /**
  * @typedef {import("vscode-languageserver-protocol").DocumentLink} DocumentLink
@@ -17,6 +276,7 @@ import { binarySearch, compareRange, lspRangeToCm } from "./utils";
  *   end: number,
  *   link: DocumentLink,
  *   pos: number,
+ *   i: number,
  * }}
  */
 
@@ -26,6 +286,8 @@ import { binarySearch, compareRange, lspRangeToCm } from "./utils";
  *   decorations: import("@codemirror/view").DecorationSet,
  *   links: readonly DocumentLink[],
  *   find: (pos: number, side?: -1 | 1) => null | DocumentLinkStateDetail,
+ *   findUri: (pos: number) => import("vscode-languageserver-types").URI | undefined,
+ *   indicesOfUri: (uri: import("vscode-languageserver-types").URI) => number[],
  * }}
  */
 
@@ -38,9 +300,7 @@ import { binarySearch, compareRange, lspRangeToCm } from "./utils";
 function createDocumentLinkState(links, doc) {
   const decorations = Decoration.set(
     links.map((link, i) =>
-      Decoration.mark({ class: "cm-lsp-link", i }).range(
-        ...lspRangeToCm(link.range, doc),
-      ),
+      createLinkMark("document", i).range(...lspRangeToCm(link.range, doc)),
     ),
   );
 
@@ -53,13 +313,28 @@ function createDocumentLinkState(links, doc) {
         i = -1;
 
       this.decorations.between(pos, pos, (from, to, { spec }) => {
-        start = from;
-        end = to;
-        i = spec.i;
-        return false;
+        if (spec.type === "document") {
+          start = from;
+          end = to;
+          i = spec.i;
+          return false;
+        }
       });
 
-      return i === -1 ? null : { link: this.links[i], start, end, pos };
+      return i === -1 ? null : { link: this.links[i], start, end, pos, i };
+    },
+    findUri(pos) {
+      return this.find(pos)?.link.target;
+    },
+    indicesOfUri(uri) {
+      /** @type {number[]} */
+      const indices = [];
+      this.links.forEach((link, i) => {
+        if (link.target === uri) {
+          indices.push(i);
+        }
+      });
+      return indices;
     },
   };
 }
@@ -80,17 +355,6 @@ const documentLinkFacet = Facet.define({
     return a.target === b.target && compareLinkRange(a, b) === 0;
   },
 });
-
-/**
- * @typedef LinkEvent
- * @type {{
- *   type: "follow",
- *   data: DocumentLinkStateDetail,
- * }}
- */
-
-/** @type {import("@codemirror/state").AnnotationType<LinkEvent>} */
-export const linkEvent = Annotation.define();
 
 function createDocumentLinkCollection() {
   return documentLinkFacet.computeN(
@@ -122,53 +386,14 @@ function createDocumentLinkCollection() {
   );
 }
 
-/**
- *
- * @param {import("@codemirror/state").StateField<DocumentLinkState>} field
- */
-function createDocumentLinkDecorations(field) {
-  return EditorView.decorations.from(
-    field,
-    (state) => state?.decorations || Decoration.none,
-  );
-}
-
-/**
- *
- * @param {import("@codemirror/state").StateField<DocumentLinkState>} field
- */
-function createDocumentLinkEventHandler(field) {
-  return EditorView.domEventHandlers({
-    click({ ctrlKey, clientX: x, clientY: y }, view) {
-      if (!ctrlKey) {
-        return;
-      }
-      const pos = view.posAtCoords({ x, y });
-      if (!pos) {
-        return;
-      }
-
-      const result = view.state.field(field)?.find(pos);
-      if (result) {
-        // TODO: close the present open file
-        view.dispatch({
-          annotations: linkEvent.of({ type: "follow", data: result }),
-        });
-        return true;
-      }
-    },
-  });
-}
-
 export const documentLink = StateField.define({
   /** @returns {DocumentLinkState} */
   create(state) {
     return createDocumentLinkState([], state.doc);
   },
   update(value, tr) {
-    const oldLinks = tr.startState.facet(documentLinkFacet);
-    const newLinks = tr.state.facet(documentLinkFacet);
-    if (oldLinks !== newLinks) {
+    const newLinks = getFacetIfNeedsRefresh(tr, documentLinkFacet);
+    if (newLinks) {
       value = createDocumentLinkState(newLinks, tr.newDoc);
     } else if (tr.docChanged) {
       value = { ...value, decorations: value.decorations.map(tr.changes) };
@@ -179,18 +404,13 @@ export const documentLink = StateField.define({
   provide(field) {
     return [
       createDocumentLinkCollection(),
-      createDocumentLinkDecorations(field),
-      createDocumentLinkEventHandler(field),
+      createLinkDecorations(field),
+      createLinkEventHandler(field, "document"),
+      createLinkAttributes(field, "document"),
     ];
   },
 });
 
-export const baseTheme = EditorView.baseTheme({
-  ".cm-lsp-link": {
-    textDecoration: "underline 1px",
-  },
-});
-
 export default function () {
-  return [documentLink, baseTheme];
+  return [linkActivity, linkLoading, baseTheme, documentLink];
 }

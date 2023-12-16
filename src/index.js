@@ -22,7 +22,6 @@ import {
 
 import lint from "./lint";
 import link from "./link";
-import file from "./file";
 import step from "./step";
 import page from "./page";
 import hint from "./hint";
@@ -43,7 +42,6 @@ int main() {
     // UI based on LSP
     lint(),
     link(),
-    file(),
     step(),
     page(),
     hint(),

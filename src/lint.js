@@ -3,7 +3,7 @@
 import { linter } from "@codemirror/lint";
 import {
   publishDiagnosticsParams,
-  getValueIfNeedsRefresh,
+  getStateIfNeedsRefresh,
 } from "codemirror-lsp";
 
 import { lspPositionToCm, lspSeverityToCm } from "./utils";
@@ -25,7 +25,7 @@ export const diagnosticLint = linter(
   {
     needsRefresh(update) {
       return (
-        getValueIfNeedsRefresh(update, publishDiagnosticsParams) !== undefined
+        getStateIfNeedsRefresh(update, publishDiagnosticsParams) !== undefined
       );
     },
   },
