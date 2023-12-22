@@ -13,6 +13,7 @@ import {
 import { produce } from "immer";
 
 import { binarySearch, compareRange, lspRangeToCm } from "./utils";
+import { provideStep } from "./step";
 
 /**
  * @typedef LinkType
@@ -40,7 +41,7 @@ export const linkActivateEffect = StateEffect.define();
 export const linkDeactivateEffect = StateEffect.define();
 
 export const linkActivity = StateField.define({
-  /** @returns {Partial<Record<LinkType, boolean>>} */
+  /** @returns {Partial<Record<LinkType, 0|1>>} */
   create() {
     return {};
   },
@@ -48,13 +49,14 @@ export const linkActivity = StateField.define({
     return produce(value, (draft) => {
       for (const effect of tr.effects) {
         if (effect.is(linkActivateEffect)) {
-          draft[effect.value] = true;
+          draft[effect.value] = 1;
         } else if (effect.is(linkDeactivateEffect)) {
-          draft[effect.value] = false;
+          draft[effect.value] = 0;
         }
       }
     });
   },
+  provide: provideStep,
 });
 
 export class LinkLoading {
@@ -78,7 +80,7 @@ export class LinkLoading {
   static records = StateField.define({
     /**
      *
-     * @returns {Record<import("vscode-languageserver-types").URI, boolean>}
+     * @returns {Record<import("vscode-languageserver-types").URI, 0|1>}
      */
     create() {
       return {};
@@ -88,14 +90,15 @@ export class LinkLoading {
         const ev = getLastValueFromTransaction(tr, linkEffect);
         switch (ev?.type) {
           case "follow":
-            draft[ev.data] = true;
+            draft[ev.data] = 1;
             break;
           case "followed":
-            draft[ev.data] = false;
+            draft[ev.data] = 0;
             break;
         }
       });
     },
+    provide: provideStep,
   });
 
   /** @type {import("@codemirror/view").PluginSpec<LinkLoading>} */
@@ -113,7 +116,6 @@ export class LinkLoading {
       url = new URL(url.pathname, location.toString());
     }
 
-    await new Promise((resolve) => setTimeout(resolve, 1000));
     const response = await fetch(url);
     return await response.text();
   }
