@@ -1,8 +1,12 @@
 // @ts-check
 
 import { ViewPlugin } from "@codemirror/view";
+import { textDocument } from "codemirror-lsp";
 
-import { stepTree } from "./step";
+import { isStepIdle } from "./step";
+
+/** @type {Map<import("vscode-languageserver-types").URI, import("@codemirror/state").EditorState>} */
+const map = new Map();
 
 export const pageNavigator = ViewPlugin.define((view) => {
   /**
@@ -11,31 +15,28 @@ export const pageNavigator = ViewPlugin.define((view) => {
    */
   function listener(ev) {
     if (ev.state) {
-      const tree = view.state.field(stepTree);
-      const node = tree.nodes.get(ev.state);
-
-      if (node) {
-        view.setState(node[0]);
+      const state = map.get(ev.state);
+      if (state) {
+        view.setState(state);
       }
     }
   }
 
   window.addEventListener("popstate", listener);
+
   return {
     update(update) {
-      void update;
-      // const prevNumber = update.startState.field(stepNumber);
-      // const currNumber = update.state.field(stepNumber);
+      const prevUri = update.startState.field(textDocument).uri;
+      const currUri = update.state.field(textDocument).uri;
 
-      // for (const tr of update.transactions) {
-      // if (tr.annotation(fileEvent)?.type == "load") {
-      //   history.replaceState(prevNumber, "");
-      //   history.pushState(null, "");
-      //   break;
-      // }
-      // }
+      if (isStepIdle(update.state)) {
+        map.set(currUri, update.state);
+      }
 
-      // history.replaceState(currNumber, "");
+      if (prevUri !== currUri) {
+        history.pushState(prevUri, "");
+        history.replaceState(currUri, "");
+      }
     },
     destroy() {
       window.removeEventListener("popstate", listener);
