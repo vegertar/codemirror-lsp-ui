@@ -3,7 +3,7 @@
 import { ViewPlugin } from "@codemirror/view";
 import { textDocument } from "codemirror-lsp";
 
-import { isStepIdle } from "./step";
+import { isStepIdle } from "./step.js";
 
 /** @type {Map<import("vscode-languageserver-types").URI, import("@codemirror/state").EditorState>} */
 const map = new Map();

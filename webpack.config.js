@@ -1,6 +1,6 @@
 /* eslint-env node */
 
-module.exports = {
+export default {
   module: {
     rules: [
       {

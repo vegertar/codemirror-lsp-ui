@@ -4,6 +4,7 @@
   "author": "Joe Hu <vegertar@gmail.com>",
   "license": "MIT",
   "private": true,
+  "type": "module",
   "scripts": {
     "build": "webpack",
     "start": "webpack serve --open --mode=development --static-directory=dist",

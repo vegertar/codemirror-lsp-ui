@@ -20,11 +20,11 @@ import {
   implementationClientCapabilities,
 } from "codemirror-lsp";
 
-import lint from "./lint";
-import link from "./link";
-import step from "./step";
-import page from "./page";
-import hint from "./hint";
+import lint from "./lint.js";
+import link from "./link.js";
+import step from "./step.js";
+import page from "./page.js";
+import hint from "./hint.js";
 
 new EditorView({
   doc: String.raw`#include <stdio.h>

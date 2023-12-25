@@ -12,8 +12,8 @@ import {
 } from "codemirror-lsp";
 import { produce } from "immer";
 
-import { binarySearch, compareRange, lspRangeToCm } from "./utils";
-import { provideStep } from "./step";
+import { binarySearch, compareRange, lspRangeToCm } from "./utils.js";
+import { provideStep } from "./step.js";
 
 /**
  * @typedef LinkType

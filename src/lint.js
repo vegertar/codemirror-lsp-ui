@@ -6,7 +6,7 @@ import {
   getStateIfNeedsRefresh,
 } from "codemirror-lsp";
 
-import { lspPositionToCm, lspSeverityToCm } from "./utils";
+import { lspPositionToCm, lspSeverityToCm } from "./utils.js";
 
 export const diagnosticLint = linter(
   (view) => {
