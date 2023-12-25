@@ -1,12 +1,12 @@
 // @ts-check
 
 import { Facet } from "@codemirror/state";
-import { showTooltip } from "@codemirror/view";
+import { showTooltip, repositionTooltips } from "@codemirror/view";
 import { HintSet } from "codemirror-lsp-components";
-import { Hover, HoverProvider } from "codemirror-lsp";
+import { Hover, HoverProvider, getFacetPairs } from "codemirror-lsp";
 
-import { documentLink } from "./link";
-import { lifecycleGuard } from "./utils";
+import { documentLink } from "./link.js";
+import { lifecycleGuard, lspRangeToCm } from "./utils.js";
 
 /**
  * @typedef Hints
@@ -24,20 +24,20 @@ export class HintView {
    *
    * @param {import("@codemirror/view").EditorView} view
    */
-  // eslint-disable-next-line no-unused-vars
   constructor(view) {
+    this.view = view;
     this.dom = lifecycleGuard(this);
     this.dom.classList.add("cm-lsp-hint");
   }
 
   connectedCallback() {
-    this.hints = new HintSet({ target: this.dom });
+    this.hintSet = new HintSet({ target: this.dom });
   }
 
   disconnectedCallback() {
-    if (this.hints) {
-      this.hints.$destroy();
-      this.hints = null;
+    if (this.hintSet) {
+      this.hintSet.$destroy();
+      this.hintSet = null;
     }
   }
 
@@ -70,9 +70,42 @@ export class HintView {
    * @param {import("@codemirror/view").ViewUpdate} update
    */
   update(update) {
-    this.hints?.$set({
-      hints: /** @type {Hints} */ (update.state.facet(hint).filter((x) => x)),
-    });
+    const pos = Hover.value(update.state, "required by HintView");
+    if (pos == null) {
+      return;
+    }
+
+    const [prevHints, currHints] = getFacetPairs(update, hint);
+    if (prevHints === currHints) {
+      return;
+    }
+
+    /** @type {Hints} */
+    const hints = [];
+
+    let x = pos;
+    for (const datum of currHints) {
+      if (datum) {
+        hints.push(datum);
+        const response = datum[1];
+        const range = response.range;
+        if (range) {
+          const [from] = lspRangeToCm(range, update.state.doc);
+          if (from < x) {
+            x = from;
+          }
+        }
+      }
+    }
+
+    if (x === pos) {
+      this.offset = undefined;
+    } else {
+      this.offset = { x: (x - pos) * this.view.defaultCharacterWidth, y: 0 };
+    }
+
+    this.hintSet?.$set({ hints });
+    repositionTooltips(this.view);
   }
 
   /**
@@ -89,10 +122,20 @@ export class HintView {
 }
 
 function showHint() {
-  return showTooltip.compute([Hover.state], (state) => ({
-    pos: state.field(Hover.state),
-    create: (view) => new HintView(view),
-  }));
+  /**
+   * The standalone create would update the active tooltip instead of creating a new one.
+   * See: https://discuss.codemirror.net/t/change-position-of-tooltip/5783/2
+   * @param {import("@codemirror/view").EditorView} view
+   * @returns
+   */
+  function create(view) {
+    return new HintView(view);
+  }
+
+  return showTooltip.compute([Hover.state], (state) => {
+    const pos = state.field(Hover.state);
+    return { pos, create };
+  });
 }
 
 function createDocumentLinkHint() {
@@ -103,17 +146,45 @@ function createDocumentLinkHint() {
   });
 }
 
-function createHoverHint() {
-  return hint.compute([Hover.state, HoverProvider.state], (state) => {
-    const pos = Hover.value(state, "required by hover hint");
-    const response = state.field(HoverProvider.state);
-    if (response && response.pos === pos) {
-      return ["Hover", response];
-    }
-    return null;
+/**
+ *
+ * @param {number} pos
+ * @param {{pos: number, range?: import("vscode-languageserver-types").Range}} response
+ * @param {import("@codemirror/state").EditorState} state
+ */
+function posInResponse(pos, response, state) {
+  if (pos === response.pos) {
+    return true;
+  }
+
+  if (!response.range) {
+    return false;
+  }
+
+  const [from, to] = lspRangeToCm(response.range, state.doc);
+  return from <= pos && pos <= to;
+}
+
+/**
+ *
+ * @param {Hints[0][0]} type
+ * @param {import("@codemirror/state").StateField<any>} field
+ * @returns
+ */
+function createHoverHint(type, field) {
+  return hint.compute([Hover.state, field], (state) => {
+    const pos = Hover.value(state, `required by ${type} hint`);
+    const response = pos != null && state.field(field);
+    return response && posInResponse(pos, response, state)
+      ? [type, response]
+      : null;
   });
 }
 
 export default function () {
-  return [showHint(), createDocumentLinkHint(), createHoverHint()];
+  return [
+    showHint(),
+    createDocumentLinkHint(),
+    createHoverHint("Hover", HoverProvider.state),
+  ];
 }
