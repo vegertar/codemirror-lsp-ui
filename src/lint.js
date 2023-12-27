@@ -4,9 +4,10 @@ import { linter } from "@codemirror/lint";
 import {
   publishDiagnosticsParams,
   getStateIfNeedsRefresh,
+  lspPositionToCm,
 } from "codemirror-lsp";
 
-import { lspPositionToCm, lspSeverityToCm } from "./utils.js";
+import { lspSeverityToCm } from "./utils.js";
 
 export const diagnosticLint = linter(
   (view) => {

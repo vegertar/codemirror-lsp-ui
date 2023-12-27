@@ -9,11 +9,13 @@ import {
   getLastValueFromTransaction,
   getStateIfNeedsRefresh,
   textDocumentUriEffect,
+  lspRangeToCm,
 } from "codemirror-lsp";
 import { produce } from "immer";
 
-import { binarySearch, compareRange, lspRangeToCm } from "./utils.js";
+import { binarySearch, compareRange } from "./utils.js";
 import { provideStep } from "./step.js";
+import { createHint } from "./hint.js";
 
 /**
  * @typedef LinkType
@@ -272,22 +274,11 @@ function createLinkAttributes(field, type) {
  */
 
 /**
- * @typedef DocumentLinkStateDetail
- * @type {{
- *   start: number,
- *   end: number,
- *   link: DocumentLink,
- *   pos: number,
- *   i: number,
- * }}
- */
-
-/**
  * @typedef DocumentLinkState
  * @type {{
  *   decorations: import("@codemirror/view").DecorationSet,
  *   links: readonly DocumentLink[],
- *   find: (pos: number, side?: -1 | 1) => null | DocumentLinkStateDetail,
+ *   find: (pos: number, side?: -1 | 1) => {datum: DocumentLink | null, from: number, to: number, pos: number},
  *   findUri: (pos: number) => import("vscode-languageserver-types").URI | undefined,
  *   indicesOfUri: (uri: import("vscode-languageserver-types").URI) => number[],
  * }}
@@ -310,8 +301,8 @@ function createDocumentLinkState(links, doc) {
     links,
     decorations,
     find(pos) {
-      let start = 0,
-        end = 0,
+      let start = NaN,
+        end = NaN,
         i = -1;
 
       this.decorations.between(pos, pos, (from, to, { spec }) => {
@@ -323,10 +314,15 @@ function createDocumentLinkState(links, doc) {
         }
       });
 
-      return i === -1 ? null : { link: this.links[i], start, end, pos, i };
+      return {
+        datum: i === -1 ? null : this.links[i],
+        from: start,
+        to: end,
+        pos,
+      };
     },
     findUri(pos) {
-      return this.find(pos)?.link.target;
+      return this.find(pos).datum?.target;
     },
     indicesOfUri(uri) {
       /** @type {number[]} */
@@ -414,5 +410,11 @@ export const documentLink = StateField.define({
 });
 
 export default function () {
-  return [linkActivity, linkLoading, baseTheme, documentLink];
+  return [
+    linkActivity,
+    linkLoading,
+    baseTheme,
+    documentLink,
+    createHint("DocumentLink", documentLink, (state, pos) => state.find(pos)),
+  ];
 }

@@ -54,27 +54,6 @@ export function lspSeverityToCm(severity) {
 }
 
 /**
- * Convert given text position from LSP to the CodeMirror Position.
- * @param {import("vscode-languageserver-types").Position} pos
- * @param {import("@codemirror/state").Text} text
- * @returns {number}
- */
-export function lspPositionToCm(pos, text) {
-  const line = text.line(pos.line + 1);
-  return line.from + pos.character;
-}
-
-/**
- * Convert given text position from LSP to the CodeMirror Position.
- * @param {import("vscode-languageserver-types").Range} range
- * @param {import("@codemirror/state").Text} text
- * @returns {[number, number]}
- */
-export function lspRangeToCm(range, text) {
-  return [lspPositionToCm(range.start, text), lspPositionToCm(range.end, text)];
-}
-
-/**
  *
  * @param {import("vscode-languageserver-types").Position} a
  * @param {import("vscode-languageserver-types").Position} b

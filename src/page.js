@@ -35,8 +35,8 @@ export const pageNavigator = ViewPlugin.define((view) => {
 
       if (prevUri !== currUri) {
         history.pushState(prevUri, "");
-        history.replaceState(currUri, "");
       }
+      history.replaceState(currUri, "");
     },
     destroy() {
       window.removeEventListener("popstate", listener);
