@@ -149,7 +149,7 @@ export class LinkLoading {
 
 export const linkLoading = ViewPlugin.fromClass(LinkLoading, LinkLoading.spec);
 
-export const baseTheme = EditorView.baseTheme({
+export const linkTheme = EditorView.baseTheme({
   ".cm-lsp-link-document": {
     textDecoration: "underline 1px",
   },
@@ -413,7 +413,7 @@ export default function () {
   return [
     linkActivity,
     linkLoading,
-    baseTheme,
+    linkTheme,
     documentLink,
     createHint("DocumentLink", documentLink, (state, pos) => state.find(pos)),
   ];

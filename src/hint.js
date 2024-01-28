@@ -11,6 +11,7 @@ import {
 } from "codemirror-lsp";
 
 import { lifecycleGuard } from "./utils.js";
+import { provideStep } from "./step.js";
 
 /**
  * @typedef Hints
@@ -26,7 +27,7 @@ import { lifecycleGuard } from "./utils.js";
  * Facet to which an extension can add a value to display a tooltip at the mouse hover position.
  * @type {Facet<[Hints[0][0], HintState] | null>}
  */
-export const hint = Facet.define();
+export const showHint = Facet.define();
 
 export class HintView {
   /**
@@ -105,7 +106,7 @@ export class HintView {
 
     const pos = state.field(Hover.state, false);
     const hints = [];
-    for (const item of state.facet(hint)) {
+    for (const item of state.facet(showHint)) {
       if (!item?.[1].datum) {
         continue;
       }
@@ -134,7 +135,7 @@ export class HintView {
   resize;
 }
 
-export const tooltip = StateField.define({
+export const hint = StateField.define({
   /** @returns {Omit<import("@codemirror/view").Tooltip, "end"> & {end: number} | null} */
   create() {
     return null;
@@ -159,7 +160,7 @@ export const tooltip = StateField.define({
       }
     }
 
-    const hints = getFacetIfNeedsRefresh(tr, hint);
+    const hints = getFacetIfNeedsRefresh(tr, showHint);
     if (hints === undefined) {
       return value;
     }
@@ -197,7 +198,7 @@ export const tooltip = StateField.define({
   },
 });
 
-export const indicator = StateField.define({
+export const hintIndicator = StateField.define({
   create() {
     return false;
   },
@@ -208,22 +209,25 @@ export const indicator = StateField.define({
       return false;
     }
 
-    const [prev, curr] = getStatePairs(tr, tooltip);
+    const [prev, curr] = getStatePairs(tr, hint);
     if (prev !== curr) {
       return false;
     }
 
-    return curr && curr.pos <= pos && pos <= curr.end ? value : true;
+    return !curr || (curr.pos <= pos && pos <= curr.end) ? value : true;
   },
 
   provide(field) {
-    return EditorView.contentAttributes.from(field, (value) => {
-      return { ["data-cm-lsp-hint-indicator"]: value ? "on" : "off" };
-    });
+    return provideStep(field);
   },
 });
 
-export const baseTheme = EditorView.baseTheme({
+export const hintAttributes = EditorView.contentAttributes.from(
+  hintIndicator,
+  (value) => ({ ["data-cm-lsp-hint-indicator"]: value ? "on" : "off" }),
+);
+
+export const hintTheme = EditorView.baseTheme({
   '[data-cm-lsp-hint-indicator="on"]': {
     cursor: "progress",
   },
@@ -252,7 +256,7 @@ export const baseTheme = EditorView.baseTheme({
  */
 export function createHint(...args) {
   const [type, field, getter] = args;
-  return hint.compute([Hover.state, field], (state) => {
+  return showHint.compute([Hover.state, field], (state) => {
     const pos = state.field(Hover.state, false);
     if (pos === undefined) {
       console.warn(`"Hover.state" is missing, required by ${type} hint`);
@@ -269,9 +273,10 @@ export function createHint(...args) {
 
 export default function () {
   return [
-    tooltip,
-    indicator,
-    baseTheme,
+    hint,
+    hintIndicator,
+    hintAttributes,
+    hintTheme,
     createHint("Hover", HoverProvider.state),
   ];
 }

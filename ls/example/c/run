@@ -4,4 +4,5 @@ BASEDIR=$(dirname "$0")
 
 cd ${BASEDIR}
 #exec ./ccls -v 2
-exec clangd --log=verbose
+#exec clangd --log=verbose
+exec node ../../../../language-server-cc/src/index.js --stdio

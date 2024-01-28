@@ -98,7 +98,7 @@ export function binarySearch(array, item, f, first, last) {
     if (d < 0) {
       end = mid;
     } else {
-      start = mid;
+      start = mid + 1;
     }
   }
 

@@ -11,26 +11,44 @@ export const BUSY_STEP = /** @type {const} */ (1);
  * @type {typeof IDLE_STEP | typeof BUSY_STEP}
  */
 
-/** @type {import("@codemirror/state").Facet<StepState[], StepState>} */
+/** @type {import("@codemirror/state").Facet<StepState, StepState>} */
 export const step = Facet.define({
   combine: (value) => {
-    let v = 0;
-    for (const x of value) {
-      for (const y of x) {
-        v += y;
-      }
-    }
-    return v ? BUSY_STEP : IDLE_STEP;
+    return value.indexOf(BUSY_STEP) === -1 ? IDLE_STEP : BUSY_STEP;
   },
 });
 
 /**
+ * @overload
+ * @param {import("@codemirror/state").StateField<boolean>} field
+ * @returns {import("@codemirror/state").Extension}
+ */
+
+/**
+ * @overload
+ * @param {import("@codemirror/state").StateField<0 | 1>} field
+ * @returns {import("@codemirror/state").Extension}
+ */
+
+/**
  * @template {string} T
+ * @overload
  * @param {import("@codemirror/state").StateField<Record<T, StepState>>} field
- * @returns
+ * @returns {import("@codemirror/state").Extension}
+ */
+
+/**
+ * @param {import("@codemirror/state").StateField<any>} field
+ * @returns {import("@codemirror/state").Extension}
  */
 export function provideStep(field) {
-  return step.from(field, (value) => Object.values(value));
+  return step.from(field, (value) => {
+    if (typeof value === "object" && value) {
+      const values = Array.isArray(value) ? value : Object.values(value);
+      value = values.find((x) => x);
+    }
+    return value ? BUSY_STEP : IDLE_STEP;
+  });
 }
 
 /**
@@ -41,8 +59,8 @@ export function isStepIdle(state) {
   return state.facet(step) === IDLE_STEP;
 }
 
-export const stepSession = step.from(initializeResult, (complete) =>
-  complete ? [IDLE_STEP] : [BUSY_STEP],
+export const stepHandshake = step.from(initializeResult, (complete) =>
+  complete ? IDLE_STEP : BUSY_STEP,
 );
 
 export const stepDocument = step.from(
@@ -50,10 +68,10 @@ export const stepDocument = step.from(
   (state) =>
     state === TextDocumentSynchronization.OPEN ||
     state === TextDocumentSynchronization.CLOSED
-      ? [IDLE_STEP]
-      : [BUSY_STEP],
+      ? IDLE_STEP
+      : BUSY_STEP,
 );
 
 export default function () {
-  return [stepSession, stepDocument];
+  return [stepHandshake, stepDocument];
 }
